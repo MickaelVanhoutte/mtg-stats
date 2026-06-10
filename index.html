@@ -2,12 +2,54 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Commander Stats</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
+<!-- ============================ LOGIN ============================ -->
+<section id="screen-login" class="screen">
+  <div class="login-card">
+    <div class="login-brand">◈ Mythic Ledger</div>
+    <div class="login-sub">One ledger, every pod.</div>
+
+    <div class="seg-tabs" id="authTabs">
+      <button class="on" data-auth="login">Log in</button>
+      <button data-auth="register">Create</button>
+    </div>
+
+    <form id="loginForm" class="auth-form">
+      <label>Handle</label>
+      <input name="handle" autocomplete="username" placeholder="mika" required>
+      <label>PIN</label>
+      <input name="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="4–8 digits" required>
+      <button class="primary big" type="submit">Log in</button>
+    </form>
+
+    <form id="registerForm" class="auth-form" hidden>
+      <label>Handle</label>
+      <input name="handle" autocomplete="username" placeholder="letters, digits, _" required>
+      <label>Display name</label>
+      <input name="displayName" placeholder="Mickael" >
+      <label>PIN</label>
+      <input name="pin" type="password" inputmode="numeric" autocomplete="new-password" placeholder="4–8 digits" required>
+      <button class="primary big" type="submit">Create account</button>
+    </form>
+
+    <div class="login-join">
+      <span>Got an invite code?</span>
+      <div class="join-row">
+        <input id="joinCode" placeholder="ABC123" maxlength="8">
+        <button class="ghost" id="joinBtn">Join</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ APP ============================ -->
+<section id="screen-app" class="screen">
 <div class="wrap">
 
   <header>
@@ -15,7 +57,10 @@
       <h1>Commander Stats</h1>
       <div class="sub">One ledger, every pod — stats unbiased by player count</div>
     </div>
-    <div class="total"><b id="totalGames">0</b> logged</div>
+    <div class="header-actions">
+      <button class="primary play-btn" id="newGameBtn">＋ New Game</button>
+      <div class="user-chip" id="userChip" title="Account / group"></div>
+    </div>
   </header>
 
   <div class="ribbon" id="ribbon"></div>
@@ -68,6 +113,8 @@
         <button class="tab" data-tab="trends">Trends</button>
         <button class="tab" data-tab="h2h">Head&nbsp;to&nbsp;Head</button>
         <button class="tab" data-tab="log">Game Log</button>
+        <button class="tab" data-tab="collection">Collection</button>
+        <button class="tab" data-tab="group">Group</button>
       </div>
 
       <div class="tabpane on" data-pane="decks"><div id="decksView"></div></div>
@@ -82,12 +129,22 @@
       </div>
       <div class="tabpane" data-pane="h2h"><div id="h2hView"></div></div>
       <div class="tabpane" data-pane="log"><div id="logView"></div></div>
+      <div class="tabpane" data-pane="collection"><div id="collectionView"></div></div>
+      <div class="tabpane" data-pane="group"><div id="groupView"></div></div>
     </div>
   </div>
 
 </div>
+</section>
+
+<!-- ============================ GAME ============================ -->
+<section id="screen-play" class="screen">
+  <div id="gameRoot"></div>
+</section>
 
 <div class="toast" id="toast"></div>
+<div class="modal-backdrop" id="modalBackdrop" hidden><div class="modal" id="modal"></div></div>
+
 <script src="app.js" defer></script>
 </body>
 </html>
