@@ -49,11 +49,15 @@ function normalizeImport(raw){
 // back-to-back games with the same date+seating+decks (a normal Commander
 // rematch night) produced identical keys and got silently dropped.
 function mergeGames(incoming){
-  const seenId = new Set(GAMES.map(g=>g.id));
+  const byId = new Map(GAMES.map(g=>[g.id,g]));
   let added = 0;
   incoming.forEach(g => {
-    if (!g.id || seenId.has(g.id)) return;
-    GAMES.push(g); seenId.add(g.id); added++;
+    if (!g.id) return;
+    const prev = byId.get(g.id);
+    if (!prev) { GAMES.push(g); byId.set(g.id, g); added++; }
+    else if (g.enriched && !prev.enriched) {           // upgrade stale local copy with enriched cloud data
+      Object.assign(prev, g);
+    }
   });
   save();
   return added;
