@@ -440,3 +440,14 @@ button.big{ padding:13px; font-size:15px; }
 @media(min-width:560px){
   .deck-grid{ grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); }
 }
+
+/* ---- game timer ---- */
+.timer-pill{ position:fixed; left:50%; top:50%; transform:translate(-50%,calc(-50% - 44px));
+  display:flex; align-items:center; gap:6px; z-index:11;
+  background:rgba(5,7,10,.82); color:#ede4d3; border:1px solid var(--border-strong); border-radius:20px;
+  padding:5px 12px; font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;
+  box-shadow:0 3px 12px rgba(0,0,0,.5); }
+.timer-pill .t-ico{ font-size:10px; color:var(--mid); }
+.timer-pill.paused{ color:var(--text-dim); border-color:var(--mid); }
+.timer-pill.paused .t-ico{ color:var(--mid); }
+.dur-tag{ font-size:11px; color:var(--text-faint); margin-top:2px; white-space:nowrap; }

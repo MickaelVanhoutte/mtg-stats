@@ -64,7 +64,8 @@ function normalizeImport(raw){
       date: (g.date || g.playedAt || g.createdAt || '').slice(0,10) || todayStr(),
       playerCount: pc,
       players,
-      enriched: !!g.enriched
+      enriched: !!g.enriched,
+      durationSec: (Number(g.durationSec)>0 ? Math.round(Number(g.durationSec)) : undefined)
     };
   }).filter(g => g.players.length);
 }
@@ -122,6 +123,12 @@ function filtered(){
 /* =================== HELPERS =================== */
 function todayStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function pct(n,d){ return d? Math.round(n/d*1000)/10 : 0; }
+// seconds -> "h:mm:ss" (or "m:ss" under an hour)
+function fmtDur(sec){
+  sec = Math.max(0, Math.round(sec||0));
+  const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+}
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function pctTag(pc){ const c = pc<=2?'2':pc===3?'3':'4'; const lbl = pc===2?'1v1':pc+'p'; return `<span class="pcount-tag pcount-${c}">${lbl}</span>`; }
 
@@ -207,11 +214,13 @@ function renderRibbon(){
   const f = filtered();
   const decks = new Set(), players = new Set();
   f.forEach(g=>g.players.forEach(p=>{ decks.add(p.deck); players.add(p.name); }));
+  const timed = f.filter(g=>g.durationSec>0);
+  const avgDur = timed.length ? timed.reduce((t,g)=>t+g.durationSec,0)/timed.length : null;
   const cells = [
     [f.length, 'Games'],
     [players.size, 'Players'],
     [decks.size, 'Decks'],
-    [GAMES.length, 'Total logged'],
+    [avgDur!=null ? fmtDur(avgDur) : '–', 'Avg length'],
   ];
   document.getElementById('ribbon').innerHTML = cells.map(c=>
     `<div class="cell"><div class="num">${c[0]}</div><div class="lbl">${c[1]}</div></div>`).join('');
@@ -458,7 +467,7 @@ function renderLog(){
     <tbody>${slice.map(g=>{
       const winners = g.players.filter(p=>p.won).map(p=>p.name).join(', ') || '—';
       return `<tr>
-        <td class="num-cell">${esc(g.date)}</td>
+        <td class="num-cell">${esc(g.date)}${g.durationSec?`<div class="dur-tag">⏱ ${fmtDur(g.durationSec)}</div>`:''}</td>
         <td>${pctTag(g.playerCount)}</td>
         <td>${seatList(g)}</td>
         <td class="winner-name">${esc(winners)}</td>
@@ -469,6 +478,7 @@ function renderLog(){
     return `<div class="row-card">
       <div class="rc-head">
         <span class="rc-title">${esc(g.date)} ${pctTag(g.playerCount)}</span>
+        ${g.durationSec?`<span class="dur-tag">⏱ ${fmtDur(g.durationSec)}</span>`:''}
       </div>
       <div class="rc-seats">${seatList(g)}</div>
     </div>`;
@@ -951,18 +961,51 @@ function beginGame(){
   });
   LIVE = { gameId: uid(), groupId: CURRENT_GROUP, type:SETUP.type, startLife:SETUP.startLife,
     seatCount:SETUP.seatCount, seats, firstPlayerSeat:null, firstDeathDone:false,
-    status:'playing', startedAt: new Date().toISOString() };
+    status:'playing', startedAt: new Date().toISOString(),
+    elapsedSec:0, running:true, tickFrom:Date.now() };
   saveLive(); renderGame(); rollFirst();
+}
+
+/* ---- timer ---- */
+let TIMER_INT = null;
+function liveElapsed(){
+  if(!LIVE) return 0;
+  return LIVE.elapsedSec + (LIVE.running ? (Date.now()-LIVE.tickFrom)/1000 : 0);
+}
+function startTimerTick(){
+  clearInterval(TIMER_INT);
+  TIMER_INT = setInterval(()=>{
+    const el = document.getElementById('gameTimer');
+    if(el) el.textContent = fmtDur(liveElapsed());
+  }, 500);
+}
+function stopTimerTick(){ clearInterval(TIMER_INT); TIMER_INT=null; }
+function toggleTimer(){
+  if(!LIVE) return;
+  if(LIVE.running){ LIVE.elapsedSec = liveElapsed(); LIVE.running=false; }
+  else { LIVE.tickFrom = Date.now(); LIVE.running=true; }
+  saveLive(); renderTimerPill();
+}
+function renderTimerPill(){
+  const t = document.getElementById('timerPill'); if(!t) return;
+  t.classList.toggle('paused', !LIVE.running);
+  t.innerHTML = `<span class="t-ico">${LIVE.running?'❙❙':'▶'}</span><span id="gameTimer">${fmtDur(liveElapsed())}</span>`;
 }
 
 function renderGame(){
   const root = document.getElementById('gameRoot');
+  // resuming a running game from disk: don't count time the app was closed
+  if(LIVE.running) LIVE.tickFrom = Date.now();
   root.innerHTML = `
     <div class="seat-grid seat-grid--${LIVE.seatCount}">
       ${LIVE.seats.map((s,i)=>seatTile(s,i)).join('')}
     </div>
+    <button class="timer-pill ${LIVE.running?'':'paused'}" id="timerPill"></button>
     <button class="hub" id="hubBtn">☰</button>`;
   bindSeats();
+  renderTimerPill();
+  startTimerTick();
+  root.querySelector('#timerPill').onclick = toggleTimer;
   root.querySelector('#hubBtn').onclick = hubMenu;
 }
 
@@ -1054,6 +1097,8 @@ function checkEnd(){
 }
 
 function endGame(winnerSeat){
+  if(LIVE.running){ LIVE.elapsedSec = liveElapsed(); LIVE.running=false; }
+  stopTimerTick();
   LIVE.status='finished';
   LIVE.seats.forEach(s=> s.won = winnerSeat && s.seatIndex===winnerSeat.seatIndex);
   saveLive();
@@ -1079,6 +1124,7 @@ function endGame(winnerSeat){
 async function finalizeGame(){
   const record = {
     id: LIVE.gameId, date: todayStr(), playerCount: LIVE.seatCount, enriched: true,
+    durationSec: Math.round(LIVE.elapsedSec||0),
     players: LIVE.seats.map(s=>({
       name: s.name, deck: s.deck, colors: s.colors, won: !!s.won,
       started: !!s.started, diedFirst: !!s.diedFirst, kills: s.killsBy.length,
@@ -1134,4 +1180,4 @@ function hubMenu(){
   };
 }
 
-function exitGame(){ SETUP=null; setScreen('app'); renderUserChip(); }
+function exitGame(){ stopTimerTick(); SETUP=null; setScreen('app'); renderUserChip(); }
