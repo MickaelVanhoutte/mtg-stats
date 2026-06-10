@@ -28,14 +28,18 @@ function normalizeImport(raw){
       name: String(p.name||p.player||p.playerName||'Unknown').trim(),
       deck: String(p.deck||p.deckName||p.commander||'—').trim(),
       colors: String(p.colors||'').toUpperCase().replace(/[^WUBRG]/g,''),
-      won: !!(p.won ?? p.win ?? p.winner ?? p.isWinner)
+      won: !!(p.won ?? p.win ?? p.winner ?? p.isWinner),
+      started: typeof p.started==='boolean' ? p.started : undefined,
+      diedFirst: typeof p.diedFirst==='boolean' ? p.diedFirst : undefined,
+      kills: typeof p.kills==='number' ? p.kills : undefined
     })).filter(p=>p.name);
     const pc = Number(g.playerCount || g.pod || players.length) || players.length;
     return {
       id: g.id || uid(),
       date: (g.date || g.playedAt || g.createdAt || '').slice(0,10) || todayStr(),
       playerCount: pc,
-      players
+      players,
+      enriched: !!g.enriched
     };
   }).filter(g => g.players.length);
 }
@@ -230,28 +234,38 @@ function renderPlayers(){
   const f = filtered();
   const m = {};
   f.forEach(g=>g.players.forEach(p=>{
-    const e = (m[p.name]=m[p.name]||{name:p.name,games:0,wins:0,decks:new Set(),pods:{},series:[]});
+    const e = (m[p.name]=m[p.name]||{name:p.name,games:0,wins:0,decks:new Set(),pods:{},series:[],posGames:0,starts:0,dies:0,kills:0});
     e.games++; if(p.won)e.wins++; e.decks.add(p.deck);
+    if(g.enriched){ e.posGames++; if(p.started) e.starts++; if(p.diedFirst) e.dies++; e.kills += p.kills||0; }
     const pk = podKey(g.playerCount);
     const b = e.pods[pk] = e.pods[pk] || {g:0,w:0}; b.g++; if(p.won) b.w++;
     e.series.push({ date:g.date, won:p.won?1:0 });
   }));
   let rows = Object.values(m).map(r=>{
     const sf = streakForm(r.series);
-    return {...r, wr:pct(r.wins,r.games), nd:r.decks.size, sf };
+    const hasPos = r.posGames>0;
+    return {...r, wr:pct(r.wins,r.games), nd:r.decks.size, sf, hasPos,
+      startPct: hasPos?pct(r.starts,r.posGames):null, diePct: hasPos?pct(r.dies,r.posGames):null,
+      avgKills: hasPos?Math.round(r.kills/r.posGames*10)/10:null };
   }).sort((a,b)=>b.wr-a.wr);
+  const fmtPos = v => v==null ? '–' : v+'%';
+  const fmtKills = v => v==null ? '–' : v.toFixed(1);
   const el = document.getElementById('playersView');
   if(!rows.length){ el.innerHTML = emptyState(); return; }
 
   const table = `<div class="tbl-wrap"><table>
     <thead><tr>
       <th>Player</th><th class="num">Games</th><th class="num">Win %</th>
+      <th class="num">Starts 1st</th><th class="num">Dies 1st</th><th class="num">Kills/g</th>
       <th>By pod</th><th>Form</th><th class="num">Decks</th>
     </tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td class="strong">${esc(r.name)}</td>
       <td class="num-cell">${r.games}</td>
       <td><span class="wr-badge ${wrClass(r.wr)}">${r.wr}%</span></td>
+      <td class="num-cell">${fmtPos(r.startPct)}</td>
+      <td class="num-cell">${fmtPos(r.diePct)}</td>
+      <td class="num-cell">${fmtKills(r.avgKills)}</td>
       <td>${podChips(r.pods)}</td>
       <td>${formCell(r.sf)}</td>
       <td class="num-cell">${r.nd}</td>
@@ -264,6 +278,7 @@ function renderPlayers(){
     </div>
     <div class="rc-sub">${r.wins}/${r.games} won · ${r.nd} deck${r.nd>1?'s':''}</div>
     <div class="rc-row">${podChips(r.pods)}</div>
+    <div class="rc-row"><span class="posstat">Starts 1st <b>${fmtPos(r.startPct)}</b></span><span class="posstat">Dies 1st <b>${fmtPos(r.diePct)}</b></span><span class="posstat">Kills/g <b>${fmtKills(r.avgKills)}</b></span></div>
     <div class="rc-row">${formCell(r.sf)}</div>
   </div>`).join('')}</div>`;
 
@@ -380,7 +395,7 @@ function renderLog(){
     `<div class="seat">${p.won?'<span class="crown">★</span>':''}<strong>${esc(p.name)}</strong><span class="seat-deck">${esc(p.deck)}</span></div>`).join('');
 
   const table = `<div class="tbl-wrap"><table>
-    <thead><tr><th>Date</th><th>Pod</th><th>Players &amp; Decks</th><th>Winner</th><th></th></tr></thead>
+    <thead><tr><th>Date</th><th>Pod</th><th>Players &amp; Decks</th><th>Winner</th></tr></thead>
     <tbody>${slice.map(g=>{
       const winners = g.players.filter(p=>p.won).map(p=>p.name).join(', ') || '—';
       return `<tr>
@@ -388,7 +403,6 @@ function renderLog(){
         <td>${pctTag(g.playerCount)}</td>
         <td>${seatList(g)}</td>
         <td class="winner-name">${esc(winners)}</td>
-        <td><button class="icon danger" data-del="${g.id}" title="Delete">✕</button></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
 
@@ -396,7 +410,6 @@ function renderLog(){
     return `<div class="row-card">
       <div class="rc-head">
         <span class="rc-title">${esc(g.date)} ${pctTag(g.playerCount)}</span>
-        <button class="icon danger" data-del="${g.id}" title="Delete">✕</button>
       </div>
       <div class="rc-seats">${seatList(g)}</div>
     </div>`;
@@ -408,11 +421,6 @@ function renderLog(){
       <button class="btn" ${logPage>=pages-1?'disabled':''} data-page="next">Next ›</button>
     </div>`;
 
-  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
-    if(!confirm('Delete this game?')) return;
-    GAMES = GAMES.filter(g=>g.id!==b.dataset.del); save(); renderAll();
-    toast('Game removed.');
-  });
   el.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{
     logPage += b.dataset.page==='next'?1:-1; renderLog();
   });
